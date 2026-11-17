@@ -38,7 +38,7 @@ impl Sink for Ntfy {
             return Ok(Delivery::Skipped);
         }
         let priority = match alert.status {
-            Status::Blocked => "urgent",
+            Status::Blocked | Status::Error => "urgent",
             Status::Done => "default",
             _ => "low",
         };
@@ -71,6 +71,7 @@ impl Sink for Ntfy {
 fn tag(status: Status) -> &'static str {
     match status {
         Status::Blocked => "red_square",
+        Status::Error => "orange_square",
         Status::Done => "green_square",
         Status::Working => "blue_square",
         Status::Idle => "white_square",

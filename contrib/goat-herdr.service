@@ -1,0 +1,19 @@
+# goat-herdr for herdr-core, as a systemd user service.
+#   cp contrib/goat-herdr.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now goat-herdr
+#   journalctl --user -u goat-herdr -f
+# Config: ~/.config/goat-herdr/config.toml and .env beside it.
+
+[Unit]
+Description=goat-herdr: alerts and the chat bridge for herdr-core agents
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=%h/.cargo/bin/goat-herdr watch --hc %h/.local/bin/hc
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

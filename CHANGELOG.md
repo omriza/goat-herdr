@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- herdr-core support: `goat-herdr watch` follows `hc events`, sends the same alerts, and runs the bridge against `hc`. Runs as a user service; see the README section and `docs/herdr-core.md`. The TUI plugin is unchanged.
+- The bridge refuses free text while a herdr-core agent waits on a permission prompt, where the Enter after the text would pick "Yes". Buttons and `/keys` answer it. Questions still take free text.
+- `error` status (herdr-core only) for `statuses`.
+- Outside Herdr, config and state default to `~/.config/goat-herdr` and `~/.local/state/goat-herdr` (or `GOAT_HERDR_CONFIG_DIR` / `GOAT_HERDR_STATE_DIR`), so `test` and `toggle` work from a shell.
+
 ## 0.4.0 (2026-09-19)
 
 - Desktop sink: `osascript` banner on macOS, `notify-send` on Linux.
