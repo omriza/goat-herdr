@@ -69,8 +69,11 @@ goat-herdr/
   Makefile              # check: fmt clippy test audit md-lint
   scripts/release.sh    # bump, check, tag, push, GitHub release
   src/
-    main.rs             # subcommands: notify, bridge, test, toggle
+    main.rs             # subcommands: notify, bridge, watch, test, toggle
+    backend.rs          # trait Backend: read_tail, agents, prompt, send_keys
     herdr.rs            # env + JSON parsing; wrapper over HERDR_BIN_PATH
+    hc.rs               # herdr-core: hc wrapper, events parser, terminal table
+    watch.rs            # follows `hc events`, reconnects
     alert.rs            # Alert { host, workspace, agent, pane_id, status, tail }
     config.rs
     state.rs            # STATE_DIR json: debounce table, pause flag, topic map, bridge cursor; std File::lock

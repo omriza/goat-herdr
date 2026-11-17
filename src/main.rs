@@ -2,19 +2,26 @@
 //!
 //! Herdr runs this binary as an event hook, a startup hook, or an action.
 //! Each run is a short-lived process that reads its input from the
-//! environment Herdr injects, so all I/O here is blocking.
+//! environment Herdr injects, so all I/O here is blocking. For herdr-core,
+//! `watch` is one long-running process that follows `hc events` instead.
 
 mod alert;
+mod backend;
 mod bridge;
 mod config;
+mod hc;
 mod herdr;
 mod http;
 mod sink;
 mod state;
+mod watch;
 
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::sync::Arc;
 
 use alert::{Alert, Status};
+use backend::Backend;
 use config::Config;
 use herdr::PluginEnv;
 use state::State;
@@ -26,6 +33,7 @@ fn main() -> ExitCode {
         Some("test") => test(),
         Some("toggle") => toggle(),
         Some("bridge") => bridge_cmd(args.iter().any(|a| a == "--detach")),
+        Some("watch") => watch_cmd(&args[1..]),
         Some(other) => Err(format!("unknown subcommand: {other}")),
         None => Err(USAGE.to_string()),
     };
@@ -38,7 +46,7 @@ fn main() -> ExitCode {
     }
 }
 
-const USAGE: &str = "usage: goat-herdr <notify|bridge [--detach]|test|toggle>";
+const USAGE: &str = "usage: goat-herdr <notify|bridge [--detach]|watch [--hc PATH]|test|toggle>";
 
 /// Startup hook (`--detach`) or foreground daemon.
 fn bridge_cmd(detach: bool) -> Result<(), String> {
@@ -52,7 +60,6 @@ fn bridge_cmd(detach: bool) -> Result<(), String> {
 fn notify() -> Result<(), String> {
     let env = PluginEnv::from_env()?;
     let config = Config::load(&env)?;
-    let state = State::new(&env.state_dir);
     let event_json = env
         .event_json
         .as_deref()
@@ -62,40 +69,91 @@ fn notify() -> Result<(), String> {
         Some(json) => herdr::parse_context(json)?,
         None => herdr::Context::default(),
     };
-    let Some(mut alert) = Alert::from_event(&event, &context, &config) else {
+    let Some(alert) = Alert::from_event(&event, &context, &config) else {
         return Ok(());
     };
+    let debounce_key = alert.status.as_str();
+    dispatch(&config, &env, &env.state_dir, alert, debounce_key)
+}
+
+/// Everything after an alert is built, for `notify` and `watch` alike:
+/// closes clear the debounce entry; others respect pause and debounce, and a
+/// blocked alert gets the pane's tail. `debounce_key` is what a repeat must
+/// match to be dropped.
+fn dispatch(
+    config: &Config,
+    backend: &dyn Backend,
+    state_dir: &Path,
+    mut alert: Alert,
+    debounce_key: &str,
+) -> Result<(), String> {
+    let state = State::new(state_dir);
     if alert.status == Status::Closed {
         state.forget(&alert.pane_id)?;
     } else {
         if state.paused() {
             return Ok(());
         }
-        if !state.debounce(
-            &alert.pane_id,
-            alert.status.as_str(),
-            config.alerts.debounce_secs,
-        )? {
+        if !state.debounce(&alert.pane_id, debounce_key, config.alerts.debounce_secs)? {
             return Ok(());
         }
         if alert.status == Status::Blocked && config.alerts.tail_lines > 0 {
             // The alert goes out without a tail.
             let started = std::time::Instant::now();
-            match env.read_tail(&alert.pane_id, config.alerts.tail_lines) {
+            match backend.read_tail(&alert.pane_id, config.alerts.tail_lines) {
                 Ok(tail) => alert.tail = Some(tail),
                 Err(err) => eprintln!("goat-herdr: {err}"),
             }
             println!("tail: {}ms", started.elapsed().as_millis());
         }
     }
-    deliver(&config, &env, &alert)
+    deliver(config, state_dir, &alert)
+}
+
+/// herdr-core: follows `hc events`, alerts through the same pipeline as
+/// `notify`, and runs the bridge in-process against `hc`. Runs until killed;
+/// meant for a user service.
+fn watch_cmd(args: &[String]) -> Result<(), String> {
+    let hc_bin = match args {
+        [] => PathBuf::from("hc"),
+        [flag, path] if flag == "--hc" => PathBuf::from(path),
+        _ => return Err("usage: goat-herdr watch [--hc PATH]".to_string()),
+    };
+    let env = PluginEnv::from_env()?;
+    let config = Config::load(&env)?;
+    let hc = Arc::new(hc::Hc::new(hc_bin));
+    let bridges = sink::build_bridges(&config, &env.state_dir)?;
+    let _guard = if bridges.is_empty() {
+        None
+    } else {
+        Some(bridge::single_instance(&State::new(&env.state_dir))?)
+    };
+    let _threads = bridge::serve_all(bridges, hc.clone(), &env.state_dir);
+    println!(
+        "watch: config {}, state {}",
+        env.config_dir.display(),
+        env.state_dir.display()
+    );
+    watch::run(&hc, |transition| {
+        let Some(alert) = Alert::from_hc(&transition, &config) else {
+            return;
+        };
+        // Two different dialogs in a row are two decisions.
+        let key = match &transition.detail {
+            Some(detail) if alert.status == Status::Blocked => format!("blocked:{detail}"),
+            _ => alert.status.as_str().to_string(),
+        };
+        if let Err(err) = dispatch(&config, hc.as_ref(), &env.state_dir, alert, &key) {
+            eprintln!("goat-herdr: {err}");
+        }
+    })
 }
 
 /// Action entry point. Sends a fixed alert so the user can confirm the wiring.
 fn test() -> Result<(), String> {
     let env = PluginEnv::from_env()?;
     let config = Config::load(&env)?;
-    deliver(&config, &env, &Alert::test(&config))
+    deliver(&config, &env.state_dir, &Alert::test(&config))
 }
 
 /// Action entry point. Pauses or resumes alerts.
@@ -109,8 +167,8 @@ fn toggle() -> Result<(), String> {
     Ok(())
 }
 
-fn deliver(config: &Config, env: &PluginEnv, alert: &Alert) -> Result<(), String> {
-    let sinks = sink::build(config, &env.state_dir)?;
+fn deliver(config: &Config, state_dir: &Path, alert: &Alert) -> Result<(), String> {
+    let sinks = sink::build(config, state_dir)?;
     let mut failures = Vec::new();
     for sink in &sinks {
         let started = std::time::Instant::now();

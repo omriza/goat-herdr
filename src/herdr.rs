@@ -7,6 +7,8 @@ use std::process::Command;
 
 use serde::Deserialize;
 
+use crate::backend::{AgentInfo, Backend};
+
 #[derive(Debug, Clone)]
 pub struct PluginEnv {
     pub config_dir: PathBuf,
@@ -21,10 +23,14 @@ impl PluginEnv {
         let var = |name: &str| std::env::var(name).ok().filter(|v| !v.is_empty());
         Ok(Self {
             config_dir: var("HERDR_PLUGIN_CONFIG_DIR")
+                .or_else(|| var("GOAT_HERDR_CONFIG_DIR"))
                 .map(PathBuf::from)
+                .or_else(|| xdg_dir(env_var, "XDG_CONFIG_HOME", ".config"))
                 .ok_or("HERDR_PLUGIN_CONFIG_DIR is not set; run under herdr")?,
             state_dir: var("HERDR_PLUGIN_STATE_DIR")
+                .or_else(|| var("GOAT_HERDR_STATE_DIR"))
                 .map(PathBuf::from)
+                .or_else(|| xdg_dir(env_var, "XDG_STATE_HOME", ".local/state"))
                 .ok_or("HERDR_PLUGIN_STATE_DIR is not set; run under herdr")?,
             bin_path: var("HERDR_BIN_PATH")
                 .map(PathBuf::from)
@@ -106,6 +112,37 @@ impl PluginEnv {
     }
 }
 
+impl Backend for PluginEnv {
+    fn read_tail(&self, id: &str, lines: u32) -> Result<String, String> {
+        PluginEnv::read_tail(self, id, lines)
+    }
+
+    fn agents(&self) -> Result<Vec<AgentInfo>, String> {
+        PluginEnv::agents(self)
+    }
+
+    fn prompt(&self, id: &str, text: &str) -> Result<&'static str, String> {
+        self.agent_prompt(id, text)
+    }
+
+    fn send_keys(&self, id: &str, keys: &[&str]) -> Result<(), String> {
+        PluginEnv::send_keys(self, id, keys)
+    }
+}
+
+/// `$<xdg>/goat-herdr`, else `~/<fallback>/goat-herdr`: where config and
+/// state live when no Herdr plugin host set them (herdr-core, a shell).
+fn xdg_dir(var: impl Fn(&str) -> Option<String>, xdg: &str, fallback: &str) -> Option<PathBuf> {
+    let base = var(xdg)
+        .map(PathBuf::from)
+        .or_else(|| var("HOME").map(|home| PathBuf::from(home).join(fallback)))?;
+    Some(base.join("goat-herdr"))
+}
+
+fn env_var(name: &str) -> Option<String> {
+    std::env::var(name).ok().filter(|v| !v.is_empty())
+}
+
 /// `{"error":{"code":"x","message":"y"}}` -> `x: y`.
 fn cli_error(text: &str) -> Option<String> {
     let value: serde_json::Value = serde_json::from_str(text).ok()?;
@@ -123,18 +160,6 @@ struct AgentListEnvelope {
 #[derive(Debug, Deserialize)]
 struct AgentListResult {
     agents: Vec<AgentInfo>,
-}
-
-/// One row of `herdr agent list`, the fields the bridge reads.
-#[derive(Debug, Clone, Deserialize)]
-pub struct AgentInfo {
-    pub pane_id: String,
-    #[serde(default)]
-    pub agent: Option<String>,
-    #[serde(default)]
-    pub agent_status: Option<String>,
-    #[serde(default)]
-    pub cwd: Option<String>,
 }
 
 /// `HERDR_PLUGIN_EVENT_JSON`: `{ "event": "pane_agent_status_changed", "data": { ... } }`.
@@ -182,4 +207,34 @@ pub fn parse_event(json: &str) -> Result<EventEnvelope, String> {
 
 pub fn parse_context(json: &str) -> Result<Context, String> {
     serde_json::from_str(json).map_err(|err| format!("invalid HERDR_PLUGIN_CONTEXT_JSON: {err}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dirs_outside_herdr_follow_xdg_then_home() {
+        let env = |pairs: &'static [(&'static str, &'static str)]| {
+            move |name: &str| {
+                pairs
+                    .iter()
+                    .find(|(k, _)| *k == name)
+                    .map(|(_, v)| v.to_string())
+            }
+        };
+        assert_eq!(
+            xdg_dir(
+                env(&[("XDG_STATE_HOME", "/s"), ("HOME", "/h")]),
+                "XDG_STATE_HOME",
+                ".local/state"
+            ),
+            Some(PathBuf::from("/s/goat-herdr"))
+        );
+        assert_eq!(
+            xdg_dir(env(&[("HOME", "/h")]), "XDG_CONFIG_HOME", ".config"),
+            Some(PathBuf::from("/h/.config/goat-herdr"))
+        );
+        assert_eq!(xdg_dir(env(&[]), "XDG_CONFIG_HOME", ".config"), None);
+    }
 }

@@ -4,11 +4,15 @@
 
 use std::fs::{File, OpenOptions};
 use std::io::Write;
+use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::Arc;
+use std::thread::JoinHandle;
 use std::time::Duration;
 
+use crate::backend::{AgentInfo, Backend};
 use crate::config::Config;
-use crate::herdr::{AgentInfo, PluginEnv};
+use crate::herdr::PluginEnv;
 use crate::sink;
 use crate::state::State;
 
@@ -57,16 +61,27 @@ pub fn run(env: &PluginEnv, config: &Config, detach: bool) -> Result<(), String>
         return spawn_detached(&state);
     }
     let _guard = single_instance(&state)?;
-    let mut threads = Vec::new();
-    for bridge in bridges {
-        let env = env.clone();
-        let state = State::new(&env.state_dir);
-        threads.push(std::thread::spawn(move || serve(bridge, &env, &state)));
-    }
-    for thread in threads {
+    for thread in serve_all(bridges, Arc::new(env.clone()), &env.state_dir) {
         let _ = thread.join();
     }
     Ok(())
+}
+
+/// One polling thread per bridge, all driving `backend`. The caller holds
+/// `single_instance` for as long as the threads run.
+pub fn serve_all(
+    bridges: Vec<Box<dyn Bridge>>,
+    backend: Arc<dyn Backend>,
+    state_dir: &Path,
+) -> Vec<JoinHandle<()>> {
+    bridges
+        .into_iter()
+        .map(|bridge| {
+            let backend = Arc::clone(&backend);
+            let state = State::new(state_dir);
+            std::thread::spawn(move || serve(bridge, backend.as_ref(), &state))
+        })
+        .collect()
 }
 
 /// Starts `goat-herdr bridge` as its own process group with output in
@@ -130,7 +145,7 @@ fn stop_previous(state: &State) {
 }
 
 /// Holds `bridge.lock` for the life of the daemon and records the pid.
-fn single_instance(state: &State) -> Result<File, String> {
+pub fn single_instance(state: &State) -> Result<File, String> {
     let path = state.dir().join("bridge.lock");
     let file = File::create(&path).map_err(|err| format!("create {}: {err}", path.display()))?;
     file.try_lock()
@@ -141,7 +156,7 @@ fn single_instance(state: &State) -> Result<File, String> {
     Ok(file)
 }
 
-fn serve(bridge: Box<dyn Bridge>, env: &PluginEnv, state: &State) {
+fn serve(bridge: Box<dyn Bridge>, backend: &dyn Backend, state: &State) {
     eprintln!("bridge {}: polling", bridge.name());
     let mut failures = 0u32;
     loop {
@@ -157,7 +172,7 @@ fn serve(bridge: Box<dyn Bridge>, env: &PluginEnv, state: &State) {
                         );
                         continue;
                     }
-                    match handle(bridge.as_ref(), env, state, &inbound) {
+                    match handle(bridge.as_ref(), backend, state, &inbound) {
                         Ok(done) => eprintln!("bridge {}: {done}", bridge.name()),
                         Err(err) => {
                             eprintln!("bridge {}: error: {err}", bridge.name());
@@ -179,13 +194,13 @@ fn serve(bridge: Box<dyn Bridge>, env: &PluginEnv, state: &State) {
 /// Runs one input against Herdr. Returns a one-line record of what it did.
 fn handle(
     bridge: &dyn Bridge,
-    env: &PluginEnv,
+    backend: &dyn Backend,
     state: &State,
     inbound: &Inbound,
 ) -> Result<String, String> {
     let text = inbound.text.trim();
     if inbound.callback_id.is_some() {
-        return handle_button(bridge, env, inbound, text);
+        return handle_button(bridge, backend, inbound, text);
     }
     let (command, rest) = split_command(text);
     match command.as_deref() {
@@ -194,14 +209,14 @@ fn handle(
             Ok("help".to_string())
         }
         Some("agents") => {
-            let agents = env.agents()?;
+            let agents = backend.agents()?;
             bridge.reply(inbound, &agents_table(&agents), true)?;
             Ok("agents".to_string())
         }
         Some("tail") => {
-            let pane = target_pane(env, state, inbound)?;
+            let pane = target_pane(backend, state, inbound)?;
             let lines: u32 = rest.trim().parse().unwrap_or(40);
-            let tail = env.read_tail(&pane, lines)?;
+            let tail = backend.read_tail(&pane, lines)?;
             bridge.reply(
                 inbound,
                 if tail.is_empty() { "(empty)" } else { &tail },
@@ -215,14 +230,14 @@ fn handle(
                 bridge.reply(inbound, "usage: /keys k... (e.g. /keys y Enter)", false)?;
                 return Ok("keys usage".to_string());
             }
-            let pane = target_pane(env, state, inbound)?;
-            env.send_keys(&pane, &keys)?;
+            let pane = target_pane(backend, state, inbound)?;
+            backend.send_keys(&pane, &keys)?;
             bridge.reply(inbound, &format!("{pane} ← {}", keys.join(" ")), false)?;
             Ok(format!("keys {} -> {pane}", keys.join(" ")))
         }
         Some("status") => {
-            let pane = target_pane(env, state, inbound)?;
-            let agents = env.agents()?;
+            let pane = target_pane(backend, state, inbound)?;
+            let agents = backend.agents()?;
             let row = agents
                 .iter()
                 .filter(|a| a.pane_id == pane)
@@ -243,8 +258,8 @@ fn handle(
             if text.is_empty() {
                 return Ok("empty".to_string());
             }
-            let pane = target_pane(env, state, inbound)?;
-            let how = env.agent_prompt(&pane, text)?;
+            let pane = target_pane(backend, state, inbound)?;
+            let how = backend.prompt(&pane, text)?;
             bridge.reply(inbound, &format!("{how} {pane} ← {text}"), false)?;
             Ok(format!("{how} {pane}, {} chars", text.chars().count()))
         }
@@ -254,7 +269,7 @@ fn handle(
 /// Inline keyboard presses. Data is `k|<pane>|<key>...` or `t|<pane>`.
 fn handle_button(
     bridge: &dyn Bridge,
-    env: &PluginEnv,
+    backend: &dyn Backend,
     inbound: &Inbound,
     data: &str,
 ) -> Result<String, String> {
@@ -263,7 +278,7 @@ fn handle_button(
         bridge.ack(inbound, "bad button")?;
         return Ok(format!("bad button {data}"));
     };
-    let alive = env.agents()?.iter().any(|a| a.pane_id == pane);
+    let alive = backend.agents()?.iter().any(|a| a.pane_id == pane);
     if !alive {
         bridge.ack(inbound, &format!("{pane} is gone"))?;
         return Ok(format!("button for gone pane {pane}"));
@@ -271,7 +286,7 @@ fn handle_button(
     match kind {
         "k" => {
             let keys: Vec<&str> = parts.collect();
-            env.send_keys(pane, &keys)?;
+            backend.send_keys(pane, &keys)?;
             // The toast fades; the topic keeps a line.
             bridge.ack(inbound, &format!("sent {}", keys.join(" ")))?;
             let line = if keys.len() == 1 && keys[0].chars().all(|c| c.is_ascii_digit()) {
@@ -283,7 +298,7 @@ fn handle_button(
             Ok(format!("button keys {} -> {pane}", keys.join(" ")))
         }
         "t" => {
-            let tail = env.read_tail(pane, 40)?;
+            let tail = backend.read_tail(pane, 40)?;
             bridge.ack(inbound, "tail")?;
             bridge.reply(
                 inbound,
@@ -311,14 +326,14 @@ fn split_command(text: &str) -> (Option<String>, &str) {
 
 /// The pane a topic's input goes to: a live pane registered under the
 /// topic's key, preferring one that is blocked.
-fn target_pane(env: &PluginEnv, state: &State, inbound: &Inbound) -> Result<String, String> {
+fn target_pane(backend: &dyn Backend, state: &State, inbound: &Inbound) -> Result<String, String> {
     let Some(thread_id) = inbound.thread_id else {
         return Err("send this inside an agent's topic".to_string());
     };
     let Some((key, panes)) = state.topic_panes_for_thread(thread_id)? else {
         return Err("this topic is not tied to an agent".to_string());
     };
-    let agents = env.agents()?;
+    let agents = backend.agents()?;
     let mut live: Vec<&AgentInfo> = agents
         .iter()
         .filter(|a| panes.contains(&a.pane_id))

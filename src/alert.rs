@@ -2,6 +2,7 @@
 //! JSON directly.
 
 use crate::config::Config;
+use crate::hc;
 use crate::herdr;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,6 +22,8 @@ pub enum Status {
     Working,
     Blocked,
     Done,
+    /// herdr-core only: the program reported an error.
+    Error,
     Unknown,
     /// The pane closed; sinks that track per-agent state clean up.
     Closed,
@@ -33,6 +36,7 @@ impl Status {
             "working" => Self::Working,
             "blocked" => Self::Blocked,
             "done" => Self::Done,
+            "error" => Self::Error,
             _ => Self::Unknown,
         }
     }
@@ -43,6 +47,7 @@ impl Status {
             Self::Working => "working",
             Self::Blocked => "blocked",
             Self::Done => "done",
+            Self::Error => "error",
             Self::Unknown => "unknown",
             Self::Closed => "closed",
         }
@@ -54,6 +59,7 @@ impl Status {
             Self::Working => "🟦",
             Self::Blocked => "🟥",
             Self::Done => "🟩",
+            Self::Error => "🟧",
             Self::Unknown => "⬛",
             Self::Closed => "✖",
         }
@@ -99,6 +105,27 @@ impl Alert {
             workspace,
             agent,
             pane_id,
+            status,
+            tail: None,
+        })
+    }
+
+    /// An alert from a herdr-core transition, or `None` when the config
+    /// ignores it. Terminals on an added machine carry its name as host.
+    pub fn from_hc(transition: &hc::Transition, config: &Config) -> Option<Self> {
+        let status = transition.status;
+        if status != Status::Closed && !config.alerts.statuses.contains(&status.as_str().into()) {
+            return None;
+        }
+        let terminal = &transition.terminal;
+        Some(Self {
+            host: terminal
+                .machine()
+                .map(str::to_string)
+                .unwrap_or_else(|| config.alerts.host_label.clone()),
+            workspace: terminal.workspace(),
+            agent: terminal.agent_name(),
+            pane_id: terminal.address.clone(),
             status,
             tail: None,
         })
@@ -210,6 +237,49 @@ mod tests {
         let context = herdr::parse_context(CLOSED_CONTEXT).unwrap();
         let alert = Alert::from_event(&event, &context, &config()).unwrap();
         assert_eq!(alert.status, Status::Closed);
+    }
+
+    fn transition(status: Status) -> hc::Transition {
+        let terminal: hc::Terminal =
+            serde_json::from_str(include_str!("../tests/fixtures/hc/get_blocked.json")).unwrap();
+        hc::Transition {
+            terminal,
+            status,
+            detail: None,
+        }
+    }
+
+    #[test]
+    fn hc_transition_becomes_alert() {
+        let alert = Alert::from_hc(&transition(Status::Blocked), &config()).unwrap();
+        assert_eq!(alert.headline(), "BLOCKED goat-test · goat-test · box");
+        assert_eq!(alert.pane_id, "t10");
+        assert!(Alert::from_hc(&transition(Status::Working), &config()).is_none());
+        assert_eq!(
+            Alert::from_hc(&transition(Status::Closed), &config())
+                .unwrap()
+                .status,
+            Status::Closed
+        );
+    }
+
+    #[test]
+    fn hc_terminal_on_another_machine_names_it_as_host() {
+        let mut t = transition(Status::Done);
+        t.terminal.address = "macbookpro/t3".into();
+        let alert = Alert::from_hc(&t, &config()).unwrap();
+        assert_eq!(alert.host, "macbookpro");
+        assert_eq!(alert.pane_id, "macbookpro/t3");
+    }
+
+    #[test]
+    fn error_status_is_its_own_state() {
+        assert_eq!(Status::parse("error"), Status::Error);
+        assert_eq!(Status::Error.as_str(), "error");
+        let mut config = config();
+        assert!(Alert::from_hc(&transition(Status::Error), &config).is_none());
+        config.alerts.statuses.push("error".into());
+        assert!(Alert::from_hc(&transition(Status::Error), &config).is_some());
     }
 
     #[test]

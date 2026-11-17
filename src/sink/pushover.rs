@@ -48,7 +48,7 @@ impl Sink for Pushover {
             return Ok(Delivery::Skipped);
         }
         let priority = match alert.status {
-            Status::Blocked => 1,
+            Status::Blocked | Status::Error => 1,
             Status::Done => 0,
             _ => -1,
         };

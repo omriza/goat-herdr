@@ -5,6 +5,7 @@ A [Herdr](https://herdr.dev) plugin that alerts you when an agent needs you. Tel
 - An agent goes `blocked` or `done`: one message, with the host, workspace, agent, pane, and the last lines of its terminal.
 - Telegram forum topics give each agent pane its own thread.
 - Reply in that thread and the text goes to the agent. Buttons under a blocked alert answer its dialog.
+- Works with the Herdr TUI as a plugin, and with [herdr-core](#herdr-core) (`hc`, behind the Herdr desktop and phone apps) as a user service.
 
 ## Install
 
@@ -194,6 +195,43 @@ type = "plugin_action"
 command = "shindakun.goat-herdr.toggle"
 description = "toggle agent alerts"
 ```
+
+## herdr-core
+
+herdr-core (`hc`) runs agents in terminals that outlive any window; the Herdr desktop and phone apps talk to it. It has no plugin hooks, so goat-herdr runs beside it as one long-running process:
+
+```sh
+goat-herdr watch [--hc /path/to/hc]
+```
+
+`watch` follows `hc events`, sends an alert for every status change your `statuses` list, and runs the bridge in the same process against `hc`. Buttons, replies, `/tail`, `/keys`, `/status` and `/agents` work as on the TUI. The ids are hc addresses (`t7`, or `machine/t7` for an added machine, whose name becomes the alert's host). The workspace is the Herdr app's space (from the `where` label), else the agent's folder; the agent is its `--name`, else the program's own name (`claude-code`).
+
+Config and state live in `~/.config/goat-herdr/` and `~/.local/state/goat-herdr/` (`$XDG_CONFIG_HOME`, `$XDG_STATE_HOME`, or `GOAT_HERDR_CONFIG_DIR` and `GOAT_HERDR_STATE_DIR`). `config.toml` and `.env` take the same keys as above. hc also reports `error`; add it to `statuses` to hear about it.
+
+Install and run it as a user service:
+
+```sh
+cargo install --git https://github.com/shindakun/goat-herdr
+mkdir -p ~/.config/goat-herdr ~/.config/systemd/user
+$EDITOR ~/.config/goat-herdr/config.toml        # sinks as above; .env beside it, mode 600
+goat-herdr test                                  # one test alert to every sink
+curl -fsSLo ~/.config/systemd/user/goat-herdr.service \
+  https://raw.githubusercontent.com/shindakun/goat-herdr/main/contrib/goat-herdr.service
+systemctl --user daemon-reload
+systemctl --user enable --now goat-herdr
+journalctl --user -u goat-herdr -f
+```
+
+The unit expects `goat-herdr` in `~/.cargo/bin` and `hc` in `~/.local/bin`; edit `ExecStart` if yours differ. `toggle` pauses alerts for `watch` too.
+
+Differences from the TUI:
+
+- An agent that was already blocked when `watch` started is not announced; everything after is. When the event stream drops (a core restart), `watch` reconnects and alerts on what changed in between.
+- hc says what a dialog is. While an agent waits on a permission prompt, a plain-text reply is refused, because the Enter after it would pick the highlighted "Yes"; use the buttons or `/keys`. A question still takes text after you pick its free-text option.
+- Two different dialogs in a row each alert, even inside `debounce_secs`.
+- Run one bridge per bot token. If the TUI plugin and `watch` share a machine, give them different bots, or turn `bridge` off in one.
+
+The event and command mapping, and the design choices behind it, are in [docs/herdr-core.md](docs/herdr-core.md).
 
 ## Security
 

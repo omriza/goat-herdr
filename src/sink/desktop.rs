@@ -82,7 +82,7 @@ fn command(alert: &Alert, sound: Option<&str>) -> (&'static str, Vec<String>) {
 #[cfg(not(target_os = "macos"))]
 fn command(alert: &Alert, _sound: Option<&str>) -> (&'static str, Vec<String>) {
     let urgency = match alert.status {
-        Status::Blocked => "critical",
+        Status::Blocked | Status::Error => "critical",
         Status::Done => "normal",
         _ => "low",
     };
