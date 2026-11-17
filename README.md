@@ -225,7 +225,7 @@ journalctl --user -u goat-herdr -f
 
 The unit expects `goat-herdr` in `~/.cargo/bin` and `hc` in `~/.local/bin`; edit `ExecStart` if yours differ. `toggle` pauses alerts for `watch` too.
 
-To silence one session, send `/mute` in its topic, or run `goat-herdr mute` inside it (it reads `HC_TERMINAL_ID`; `goat-herdr mute t7` from anywhere). `/unmute` or `goat-herdr unmute` turns it back on. A mute lasts until the session ends. The same works in the TUI, where the id is the pane id.
+To silence one session, send `/mute` in its topic, or run `goat-herdr mute` inside it (it reads `HC_TERMINAL_ID`; `goat-herdr mute t7` from anywhere). `/unmute` or `goat-herdr unmute` turns it back on. A mute lasts until the session ends, even one that ends while `watch` is stopped: on start it unmutes ids that are no longer live. The same works in the TUI, where the id is the pane id.
 
 Differences from the TUI:
 

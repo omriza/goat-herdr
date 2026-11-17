@@ -7,17 +7,23 @@ use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
-use crate::hc::{self, Hc, Tracker, Transition};
+use crate::hc::{self, Hc, Line, Tracker, Transition};
 
 /// A stream that lasted this long was healthy; the back-off starts over.
 const HEALTHY: Duration = Duration::from_secs(60);
 
-pub fn run(hc: &Hc, mut on_transition: impl FnMut(Transition)) -> Result<(), String> {
+/// `on_snapshot` sees the table after each snapshot: at start and after
+/// every reconnect. `on_transition` sees each status change.
+pub fn run(
+    hc: &Hc,
+    mut on_snapshot: impl FnMut(&Tracker),
+    mut on_transition: impl FnMut(Transition),
+) -> Result<(), String> {
     let mut tracker = Tracker::default();
     let mut failures = 0u32;
     loop {
         let started = Instant::now();
-        match follow(hc, &mut tracker, &mut on_transition) {
+        match follow(hc, &mut tracker, &mut on_snapshot, &mut on_transition) {
             Ok(()) => eprintln!("watch: hc events ended"),
             Err(err) => eprintln!("watch: {err}"),
         }
@@ -34,6 +40,7 @@ pub fn run(hc: &Hc, mut on_transition: impl FnMut(Transition)) -> Result<(), Str
 fn follow(
     hc: &Hc,
     tracker: &mut Tracker,
+    on_snapshot: &mut impl FnMut(&Tracker),
     on_transition: &mut impl FnMut(Transition),
 ) -> Result<(), String> {
     let mut child = Command::new(hc.bin())
@@ -50,10 +57,16 @@ fn follow(
             continue;
         }
         match hc::parse_line(&line) {
-            Ok(parsed) => tracker
-                .apply(parsed)
-                .into_iter()
-                .for_each(&mut *on_transition),
+            Ok(parsed) => {
+                let snapshot = matches!(parsed, Line::Snapshot { .. });
+                tracker
+                    .apply(parsed)
+                    .into_iter()
+                    .for_each(&mut *on_transition);
+                if snapshot {
+                    on_snapshot(tracker);
+                }
+            }
             // One odd line is not worth dropping the stream for.
             Err(err) => eprintln!("watch: {err}"),
         }
@@ -98,7 +111,15 @@ mod tests {
         let (hc, dir) = fake_hc("follow");
         let mut tracker = Tracker::default();
         let mut seen = Vec::new();
-        follow(&hc, &mut tracker, &mut |t: Transition| seen.push(t.status)).unwrap();
+        let mut live = Vec::new();
+        follow(
+            &hc,
+            &mut tracker,
+            &mut |t: &Tracker| live = t.addresses().map(String::from).collect(),
+            &mut |t: Transition| seen.push(t.status),
+        )
+        .unwrap();
+        assert!(!live.is_empty(), "snapshot not reported");
         assert_eq!(seen.first(), Some(&Status::Blocked));
         assert_eq!(seen.last(), Some(&Status::Closed));
         assert_eq!(seen.iter().filter(|s| **s == Status::Blocked).count(), 6);
@@ -108,7 +129,7 @@ mod tests {
     #[test]
     fn missing_binary_is_an_error() {
         let hc = Hc::new(PathBuf::from("/nonexistent/hc"));
-        let err = follow(&hc, &mut Tracker::default(), &mut |_| {}).unwrap_err();
+        let err = follow(&hc, &mut Tracker::default(), &mut |_| {}, &mut |_| {}).unwrap_err();
         assert!(err.starts_with("run /nonexistent/hc events:"), "{err}");
     }
 }

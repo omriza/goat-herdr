@@ -363,6 +363,11 @@ pub struct Tracker {
 }
 
 impl Tracker {
+    /// Addresses of the live terminals in the table.
+    pub fn addresses(&self) -> impl Iterator<Item = &str> {
+        self.terminals.keys().map(String::as_str)
+    }
+
     /// Applies one line. The first snapshot only fills the table: what was
     /// already blocked before goat-herdr started is not news. Later
     /// snapshots (after a reconnect or `missed`) report what changed.
