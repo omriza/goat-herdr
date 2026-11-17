@@ -1,0 +1,67 @@
+{"jsonrpc":"2.0","method":"event","params":{"data":{"address":"t9","argv":["claude"],"cols":200,"created_ms":1794919972051,"cwd":"/tmp/claude-1001/-home-agent-src-goat-herdr/ec1cc4f6-d584-48d8-b69e-ced1bbde04f5/scratchpad/goat-test","die_with_parent":false,"exit_code":null,"finished_ms":null,"identity":"ghostty","keep":false,"labels":{},"name":"goat-test","notify":true,"parent":null,"pid":10569,"reason":null,"reported":false,"rm":false,"rows":120,"screen":"exact","signal":null,"state":"live","status":null,"status_ms":null,"template":null,"title":"","turn":0},"seq":162,"terminal":"t9","type":"created"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"records":{},"reported":true,"status":{"app":"claude-code","kind":"permission","msg":"trust this folder","state":"blocked"}},"seq":163,"terminal":"t9","type":"status"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"argv":["claude"],"cwd":"/tmp/claude-1001/-home-agent-src-goat-herdr/ec1cc4f6-d584-48d8-b69e-ced1bbde04f5/scratchpad/goat-test","name":"claude","pid":10569},"seq":164,"terminal":"t9","type":"foreground"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"records":{},"reported":true,"status":null},"seq":166,"terminal":"t9","type":"status"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"records":{},"reported":true,"status":{"app":"claude-code","state":"idle"}},"seq":167,"terminal":"t9","type":"status"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"title":"Claude Code"},"seq":168,"terminal":"t9","type":"title"}}
+{"jsonrpc":"2.0","method":"heartbeat","params":{"seq":168}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"records":{},"reported":true,"status":{"app":"claude-code","state":"working"}},"seq":171,"terminal":"t9","type":"status"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"title":"Example.com HTTP headers via curl"},"seq":172,"terminal":"t9","type":"title"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"records":{},"reported":true,"status":{"app":"claude-code","kind":"permission","msg":"approve Bash: curl -sI https://example.com | head -1","state":"blocked"}},"seq":173,"terminal":"t9","type":"status"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"state":"blocked","turn":1},"seq":174,"terminal":"t9","type":"turn"}}
+{"jsonrpc":"2.0","method":"heartbeat","params":{"seq":175}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"records":{},"reported":true,"status":{"app":"claude-code","state":"working"}},"seq":177,"terminal":"t9","type":"status"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"records":{},"reported":true,"status":{"app":"claude-code","state":"done"}},"seq":178,"terminal":"t9","type":"status"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"state":"done","turn":2},"seq":179,"terminal":"t9","type":"turn"}}
+{"jsonrpc":"2.0","method":"heartbeat","params":{"seq":179}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"records":{},"reported":true,"status":{"app":"claude-code","state":"working"}},"seq":181,"terminal":"t9","type":"status"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"records":{},"reported":true,"status":{"app":"claude-code","msg":"Showing current UTC date and time","state":"working"}},"seq":182,"terminal":"t9","type":"status"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"records":{},"reported":true,"status":{"app":"claude-code","state":"done"}},"seq":183,"terminal":"t9","type":"status"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"state":"done","turn":3},"seq":184,"terminal":"t9","type":"turn"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"records":{},"reported":true,"status":{"app":"claude-code","state":"working"}},"seq":185,"terminal":"t9","type":"status"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"records":{},"reported":true,"status":{"app":"claude-code","state":"done"}},"seq":186,"terminal":"t9","type":"status"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"state":"done","turn":4},"seq":187,"terminal":"t9","type":"turn"}}
+{"jsonrpc":"2.0","method":"heartbeat","params":{"seq":187}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"records":{},"reported":true,"status":{"app":"claude-code","state":"working"}},"seq":189,"terminal":"t9","type":"status"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"records":{},"reported":true,"status":{"app":"claude-code","kind":"permission","msg":"approve Bash: mkdir -p made-by-agent && touch made-by-agent/x","state":"blocked"}},"seq":190,"terminal":"t9","type":"status"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"state":"blocked","turn":5},"seq":191,"terminal":"t9","type":"turn"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"records":{},"reported":true,"status":{"app":"claude-code","state":"working"}},"seq":193,"terminal":"t9","type":"status"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"records":{},"reported":true,"status":{"app":"claude-code","state":"done"}},"seq":194,"terminal":"t9","type":"status"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"state":"done","turn":6},"seq":195,"terminal":"t9","type":"turn"}}
+{"jsonrpc":"2.0","method":"heartbeat","params":{"seq":195}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"records":{},"reported":true,"status":{"app":"claude-code","state":"working"}},"seq":197,"terminal":"t9","type":"status"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"records":{},"reported":true,"status":{"app":"claude-code","kind":"permission","msg":"approve Bash: touch made-by-agent/y","state":"blocked"}},"seq":198,"terminal":"t9","type":"status"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"state":"blocked","turn":7},"seq":199,"terminal":"t9","type":"turn"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"records":{},"reported":true,"status":{"app":"claude-code","state":"working"}},"seq":200,"terminal":"t9","type":"status"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"records":{},"reported":true,"status":{"app":"claude-code","state":"done"}},"seq":201,"terminal":"t9","type":"status"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"state":"done","turn":8},"seq":202,"terminal":"t9","type":"turn"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"records":{},"reported":true,"status":{"app":"claude-code","state":"working"}},"seq":204,"terminal":"t9","type":"status"}}
+{"jsonrpc":"2.0","method":"heartbeat","params":{"seq":204}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"records":{},"reported":true,"status":{"app":"claude-code","kind":"permission","msg":"approve Bash: touch made-by-agent/z","state":"blocked"}},"seq":205,"terminal":"t9","type":"status"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"state":"blocked","turn":9},"seq":206,"terminal":"t9","type":"turn"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"records":{},"reported":true,"status":{"app":"claude-code","state":"working"}},"seq":207,"terminal":"t9","type":"status"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"records":{},"reported":true,"status":{"app":"claude-code","state":"done"}},"seq":208,"terminal":"t9","type":"status"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"state":"done","turn":10},"seq":209,"terminal":"t9","type":"turn"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"records":{},"reported":true,"status":{"app":"claude-code","state":"working"}},"seq":211,"terminal":"t9","type":"status"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"records":{},"reported":true,"status":{"app":"claude-code","kind":"question","msg":"answer: Which color do you prefer? (Red · Blue)","state":"blocked"}},"seq":212,"terminal":"t9","type":"status"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"state":"blocked","turn":11},"seq":213,"terminal":"t9","type":"turn"}}
+{"jsonrpc":"2.0","method":"heartbeat","params":{"seq":213}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"records":{},"reported":true,"status":{"app":"claude-code","state":"working"}},"seq":215,"terminal":"t9","type":"status"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"records":{},"reported":true,"status":{"app":"claude-code","state":"done"}},"seq":216,"terminal":"t9","type":"status"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"state":"done","turn":12},"seq":217,"terminal":"t9","type":"turn"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"labels":{"where":"goat-test / 1"}},"seq":219,"terminal":"t9","type":"labels"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"records":{},"reported":true,"status":null},"seq":220,"terminal":"t9","type":"status"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"records":{},"reported":true,"status":null},"seq":221,"terminal":"t9","type":"status"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"title":""},"seq":222,"terminal":"t9","type":"title"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{"exit_code":129,"finished_ms":1794920087513,"reason":"killed","signal":null},"seq":223,"terminal":"t9","type":"finished"}}
+{"jsonrpc":"2.0","method":"event","params":{"data":{},"seq":224,"terminal":"t9","type":"removed"}}
+{"jsonrpc":"2.0","method":"heartbeat","params":{"seq":224}}
+{"jsonrpc":"2.0","method":"heartbeat","params":{"seq":225}}
+{"jsonrpc":"2.0","method":"heartbeat","params":{"seq":226}}
+{"jsonrpc":"2.0","method":"heartbeat","params":{"seq":226}}
+{"jsonrpc":"2.0","method":"heartbeat","params":{"seq":226}}
+{"jsonrpc":"2.0","method":"heartbeat","params":{"seq":226}}
+{"jsonrpc":"2.0","method":"heartbeat","params":{"seq":228}}
+{"jsonrpc":"2.0","method":"heartbeat","params":{"seq":228}}
+{"jsonrpc":"2.0","method":"heartbeat","params":{"seq":228}}
+{"jsonrpc":"2.0","method":"heartbeat","params":{"seq":230}}
