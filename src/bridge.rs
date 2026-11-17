@@ -44,6 +44,7 @@ const HELP: &str = "In an agent's topic:\n\
   /tail [n]       last n lines of the pane (default 40)\n\
   /keys k...      send keys, e.g. /keys y Enter or /keys esc\n\
   /status         this agent's state\n\
+  /mute, /unmute  stop or resume this agent's alerts\n\
 Anywhere:\n\
   /agents         list live agents\n\
   /help           this text";
@@ -246,6 +247,19 @@ fn handle(
             bridge.reply(inbound, &agents_table(&row), true)?;
             Ok(format!("status of {pane}"))
         }
+        Some(verb @ ("mute" | "unmute")) => {
+            let pane = target_pane(backend, state, inbound)?;
+            let muted = verb == "mute";
+            let changed = state.set_muted(&pane, muted)?;
+            let line = match (muted, changed) {
+                (true, true) => format!("{pane} muted: no alerts until /unmute or it ends"),
+                (false, true) => format!("{pane} unmuted"),
+                (true, false) => format!("{pane} is already muted"),
+                (false, false) => format!("{pane} is not muted"),
+            };
+            bridge.reply(inbound, &line, false)?;
+            Ok(format!("{verb} {pane}"))
+        }
         Some(other) => {
             bridge.reply(
                 inbound,
@@ -377,6 +391,78 @@ mod tests {
             (Some("keys".into()), "y Enter")
         );
         assert_eq!(split_command("just text"), (None, "just text"));
+    }
+
+    struct FakeBridge(std::sync::Mutex<Vec<String>>);
+
+    impl Bridge for FakeBridge {
+        fn name(&self) -> &str {
+            "fake"
+        }
+        fn poll(&self) -> Result<Vec<Inbound>, String> {
+            Ok(Vec::new())
+        }
+        fn reply(&self, _: &Inbound, text: &str, _: bool) -> Result<(), String> {
+            self.0.lock().unwrap().push(text.to_string());
+            Ok(())
+        }
+        fn ack(&self, _: &Inbound, _: &str) -> Result<(), String> {
+            Ok(())
+        }
+        fn allowed_user(&self, _: i64) -> bool {
+            true
+        }
+    }
+
+    struct OneAgent;
+
+    impl Backend for OneAgent {
+        fn read_tail(&self, _: &str, _: u32) -> Result<String, String> {
+            Ok(String::new())
+        }
+        fn agents(&self) -> Result<Vec<AgentInfo>, String> {
+            Ok(vec![AgentInfo {
+                pane_id: "t7".into(),
+                agent: Some("claude-code".into()),
+                agent_status: Some("done".into()),
+                cwd: None,
+            }])
+        }
+        fn prompt(&self, _: &str, _: &str) -> Result<&'static str, String> {
+            Ok("prompted")
+        }
+        fn send_keys(&self, _: &str, _: &[&str]) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn mute_and_unmute_in_a_topic() {
+        let dir = std::env::temp_dir().join(format!("goat-herdr-mute-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let state = State::new(&dir);
+        state.topic_thread("k", "t7", || Ok(5)).unwrap();
+        let bridge = FakeBridge(Default::default());
+        let say = |text: &str| Inbound {
+            thread_id: Some(5),
+            from_user: 1,
+            text: text.to_string(),
+            callback_id: None,
+        };
+        handle(&bridge, &OneAgent, &state, &say("/mute")).unwrap();
+        assert!(state.muted("t7"));
+        handle(&bridge, &OneAgent, &state, &say("/mute")).unwrap();
+        handle(&bridge, &OneAgent, &state, &say("/unmute")).unwrap();
+        assert!(!state.muted("t7"));
+        assert_eq!(
+            *bridge.0.lock().unwrap(),
+            [
+                "t7 muted: no alerts until /unmute or it ends",
+                "t7 is already muted",
+                "t7 unmuted"
+            ]
+        );
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

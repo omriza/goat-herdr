@@ -94,8 +94,31 @@ impl State {
         Ok(true)
     }
 
-    /// Drops the pane from the debounce table when it closes.
+    /// True when alerts for this pane are muted.
+    pub fn muted(&self, pane_id: &str) -> bool {
+        read_json::<HashSet<String>>(&self.dir.join("muted.json")).contains(pane_id)
+    }
+
+    /// Mutes or unmutes one pane. Returns false when it already was.
+    pub fn set_muted(&self, pane_id: &str, muted: bool) -> Result<bool, String> {
+        let _guard = self.lock()?;
+        let path = self.dir.join("muted.json");
+        let mut set: HashSet<String> = read_json(&path);
+        let changed = if muted {
+            set.insert(pane_id.to_string())
+        } else {
+            set.remove(pane_id)
+        };
+        if changed {
+            write_json(&path, &set)?;
+        }
+        Ok(changed)
+    }
+
+    /// Drops the pane from the debounce table and the mute list when it
+    /// closes; a later pane with the same id starts unmuted.
     pub fn forget(&self, pane_id: &str) -> Result<(), String> {
+        self.set_muted(pane_id, false)?;
         let _guard = self.lock()?;
         let path = self.dir.join("debounce.json");
         let Ok(text) = std::fs::read_to_string(&path) else {
@@ -323,6 +346,20 @@ mod tests {
         assert_eq!(state.bridge_cursor("telegram"), None);
         state.set_bridge_cursor("telegram", 12).unwrap();
         assert_eq!(state.bridge_cursor("telegram"), Some(12));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn mute_is_per_pane_and_cleared_on_close() {
+        let (state, dir) = temp_state("mute");
+        assert!(!state.muted("t7"));
+        assert!(state.set_muted("t7", true).unwrap());
+        assert!(!state.set_muted("t7", true).unwrap());
+        assert!(state.muted("t7"));
+        assert!(!state.muted("t8"));
+        state.forget("t7").unwrap();
+        assert!(!state.muted("t7"));
+        assert!(!state.set_muted("t7", false).unwrap());
         std::fs::remove_dir_all(dir).unwrap();
     }
 

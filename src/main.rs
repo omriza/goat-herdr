@@ -32,6 +32,7 @@ fn main() -> ExitCode {
         Some("notify") => notify(),
         Some("test") => test(),
         Some("toggle") => toggle(),
+        Some(verb @ ("mute" | "unmute")) => mute(verb == "mute", args.get(1).map(String::as_str)),
         Some("bridge") => bridge_cmd(args.iter().any(|a| a == "--detach")),
         Some("watch") => watch_cmd(&args[1..]),
         Some(other) => Err(format!("unknown subcommand: {other}")),
@@ -46,7 +47,8 @@ fn main() -> ExitCode {
     }
 }
 
-const USAGE: &str = "usage: goat-herdr <notify|bridge [--detach]|watch [--hc PATH]|test|toggle>";
+const USAGE: &str =
+    "usage: goat-herdr <notify|bridge [--detach]|watch [--hc PATH]|test|toggle|mute [ID]|unmute [ID]>";
 
 /// Startup hook (`--detach`) or foreground daemon.
 fn bridge_cmd(detach: bool) -> Result<(), String> {
@@ -91,7 +93,7 @@ fn dispatch(
     if alert.status == Status::Closed {
         state.forget(&alert.pane_id)?;
     } else {
-        if state.paused() {
+        if state.paused() || state.muted(&alert.pane_id) {
             return Ok(());
         }
         if !state.debounce(&alert.pane_id, debounce_key, config.alerts.debounce_secs)? {
@@ -163,6 +165,25 @@ fn toggle() -> Result<(), String> {
     println!(
         "goat-herdr alerts {}",
         if paused { "paused" } else { "resumed" }
+    );
+    Ok(())
+}
+
+/// Mutes or unmutes one session's alerts. Without an id, the session this
+/// runs in: `HC_TERMINAL_ID` under herdr-core, `HERDR_PANE_ID` in the TUI.
+fn mute(muted: bool, id: Option<&str>) -> Result<(), String> {
+    let id = id
+        .map(str::to_string)
+        .or_else(|| std::env::var("HC_TERMINAL_ID").ok())
+        .or_else(|| std::env::var("HERDR_PANE_ID").ok())
+        .filter(|id| !id.is_empty())
+        .ok_or("which session? pass its id, e.g. goat-herdr mute t7")?;
+    let env = PluginEnv::from_env()?;
+    let changed = State::new(&env.state_dir).set_muted(&id, muted)?;
+    let word = if muted { "muted" } else { "unmuted" };
+    println!(
+        "goat-herdr: {id} {}{word}",
+        if changed { "" } else { "already " }
     );
     Ok(())
 }
