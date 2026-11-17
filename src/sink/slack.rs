@@ -105,6 +105,7 @@ mod tests {
             pane_id: "w1:p1".into(),
             status: Status::Blocked,
             tail: tail.map(str::to_string),
+            session: None,
         }
     }
 

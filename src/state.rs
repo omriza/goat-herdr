@@ -29,6 +29,10 @@ struct Topics {
     /// into a closed topic without error, so the reopen has to be explicit.
     #[serde(default)]
     closed: HashSet<String>,
+    /// The name each topic was last given, for topics renamed as their
+    /// session's title changes.
+    #[serde(default)]
+    names: HashMap<String, String>,
 }
 
 /// A topic to post into.
@@ -232,6 +236,21 @@ impl State {
         let mut topics: Topics = read_json(&path);
         topics.threads.remove(key);
         topics.closed.remove(key);
+        topics.names.remove(key);
+        write_json(&path, &topics)
+    }
+
+    /// The name the topic for `key` was last given, if recorded.
+    pub fn topic_name(&self, key: &str) -> Option<String> {
+        let topics: Topics = read_json(&self.dir.join("topics.json"));
+        topics.names.get(key).cloned()
+    }
+
+    pub fn set_topic_name(&self, key: &str, name: &str) -> Result<(), String> {
+        let _guard = self.lock()?;
+        let path = self.dir.join("topics.json");
+        let mut topics: Topics = read_json(&path);
+        topics.names.insert(key.to_string(), name.to_string());
         write_json(&path, &topics)
     }
 

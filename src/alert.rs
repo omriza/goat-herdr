@@ -14,6 +14,18 @@ pub struct Alert {
     pub status: Status,
     /// Recent pane output, present on blocked alerts.
     pub tail: Option<String>,
+    /// herdr-core only: the session behind the alert.
+    pub session: Option<Session>,
+}
+
+/// One herdr-core session, for sinks that give each its own thread.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Session {
+    /// Unique per session: the address plus its start time, so a later
+    /// session that reuses the address is a different one.
+    pub key: String,
+    /// What a person reads: space, launch name, the program's title.
+    pub name: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -107,6 +119,7 @@ impl Alert {
             pane_id,
             status,
             tail: None,
+            session: None,
         })
     }
 
@@ -128,6 +141,13 @@ impl Alert {
             pane_id: terminal.address.clone(),
             status,
             tail: None,
+            session: Some(Session {
+                key: match terminal.created_ms {
+                    Some(ms) => format!("{}@{ms}", terminal.address),
+                    None => terminal.address.clone(),
+                },
+                name: terminal.session_name(),
+            }),
         })
     }
 
@@ -139,6 +159,7 @@ impl Alert {
             pane_id: "0".to_string(),
             status: Status::Blocked,
             tail: Some("this is a test alert".to_string()),
+            session: None,
         }
     }
 
@@ -254,6 +275,9 @@ mod tests {
         let alert = Alert::from_hc(&transition(Status::Blocked), &config()).unwrap();
         assert_eq!(alert.headline(), "BLOCKED goat-test · goat-test · box");
         assert_eq!(alert.pane_id, "t10");
+        let session = alert.session.unwrap();
+        assert_eq!(session.key, "t10@1794920619764");
+        assert_eq!(session.name, "goat-test · E2e-approved marker file");
         assert!(Alert::from_hc(&transition(Status::Working), &config()).is_none());
         assert_eq!(
             Alert::from_hc(&transition(Status::Closed), &config())

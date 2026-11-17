@@ -74,6 +74,7 @@ mod tests {
             pane_id: "w1:p1".into(),
             status: Status::Blocked,
             tail: Some("Proceed? (y/n)".into()),
+            session: None,
         }
     }
 

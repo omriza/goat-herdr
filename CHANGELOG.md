@@ -4,6 +4,7 @@
 
 - herdr-core support: `goat-herdr watch` follows `hc events`, sends the same alerts, and runs the bridge against `hc`. Runs as a user service; see the README section and `docs/herdr-core.md`. The TUI plugin is unchanged.
 - The bridge refuses free text while a herdr-core agent waits on a permission prompt, where the Enter after the text would pick "Yes". Buttons and `/keys` answer it. Questions still take free text.
+- herdr-core topics are named for the session (`tavern · Fix the login bug`: space, launch name, the agent's title), renamed when the title changes, and keyed per session so a reused terminal id starts a new topic.
 - `error` status (herdr-core only) for `statuses`.
 - Per-session mute: `/mute` and `/unmute` in an agent's topic, or `goat-herdr mute [ID]` and `goat-herdr unmute [ID]` (default: the session it runs in). A mute lasts until the session ends; `watch` drops mutes for sessions that ended while it was stopped.
 - Outside Herdr, config and state default to `~/.config/goat-herdr` and `~/.local/state/goat-herdr` (or `GOAT_HERDR_CONFIG_DIR` / `GOAT_HERDR_STATE_DIR`), so `test` and `toggle` work from a shell.
