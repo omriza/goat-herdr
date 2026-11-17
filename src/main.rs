@@ -136,7 +136,18 @@ fn watch_cmd(args: &[String]) -> Result<(), String> {
         env.config_dir.display(),
         env.state_dir.display()
     );
-    watch::run(&hc, |transition| {
+    let state = State::new(&env.state_dir);
+    let prune = |tracker: &hc::Tracker| {
+        let live: std::collections::HashSet<&str> = tracker.addresses().collect();
+        match state.retain_muted(|id| live.contains(id)) {
+            Ok(dropped) if !dropped.is_empty() => {
+                println!("watch: unmuted ended sessions {}", dropped.join(", "));
+            }
+            Ok(_) => {}
+            Err(err) => eprintln!("goat-herdr: {err}"),
+        }
+    };
+    watch::run(&hc, prune, |transition| {
         let Some(alert) = Alert::from_hc(&transition, &config) else {
             return;
         };

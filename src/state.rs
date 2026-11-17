@@ -115,6 +115,23 @@ impl State {
         Ok(changed)
     }
 
+    /// Unmutes every pane `live` rejects, and returns them. The watcher
+    /// calls this with each snapshot, so a session that ended while it was
+    /// stopped does not leave its id muted for the next one.
+    pub fn retain_muted(&self, live: impl Fn(&str) -> bool) -> Result<Vec<String>, String> {
+        let _guard = self.lock()?;
+        let path = self.dir.join("muted.json");
+        let mut set: HashSet<String> = read_json(&path);
+        let mut dropped: Vec<String> = set.iter().filter(|id| !live(id)).cloned().collect();
+        if dropped.is_empty() {
+            return Ok(dropped);
+        }
+        set.retain(|id| live(id));
+        write_json(&path, &set)?;
+        dropped.sort();
+        Ok(dropped)
+    }
+
     /// Drops the pane from the debounce table and the mute list when it
     /// closes; a later pane with the same id starts unmuted.
     pub fn forget(&self, pane_id: &str) -> Result<(), String> {
@@ -360,6 +377,20 @@ mod tests {
         state.forget("t7").unwrap();
         assert!(!state.muted("t7"));
         assert!(!state.set_muted("t7", false).unwrap());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn retain_muted_drops_ended_sessions() {
+        let (state, dir) = temp_state("retain");
+        for id in ["t3", "t7", "t9"] {
+            state.set_muted(id, true).unwrap();
+        }
+        let dropped = state.retain_muted(|id| id == "t7").unwrap();
+        assert_eq!(dropped, ["t3", "t9"]);
+        assert!(state.muted("t7"));
+        assert!(!state.muted("t3") && !state.muted("t9"));
+        assert!(state.retain_muted(|id| id == "t7").unwrap().is_empty());
         std::fs::remove_dir_all(dir).unwrap();
     }
 
