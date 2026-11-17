@@ -171,6 +171,7 @@ With `bridge = true` and your Telegram user id in `allowed_user_ids`, the startu
 | `/tail [n]` | posts the last n lines of the pane |
 | `/keys y Enter` | sends key presses |
 | `/status` | this agent's row from `herdr agent list` |
+| `/mute`, `/unmute` | stops or resumes this agent's alerts; the topic still takes commands |
 | `/agents` | every live agent (works in any topic) |
 | `/help` | the command list |
 
@@ -223,6 +224,8 @@ journalctl --user -u goat-herdr -f
 ```
 
 The unit expects `goat-herdr` in `~/.cargo/bin` and `hc` in `~/.local/bin`; edit `ExecStart` if yours differ. `toggle` pauses alerts for `watch` too.
+
+To silence one session, send `/mute` in its topic, or run `goat-herdr mute` inside it (it reads `HC_TERMINAL_ID`; `goat-herdr mute t7` from anywhere). `/unmute` or `goat-herdr unmute` turns it back on. A mute lasts until the session ends. The same works in the TUI, where the id is the pane id.
 
 Differences from the TUI:
 
