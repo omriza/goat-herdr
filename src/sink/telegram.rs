@@ -141,22 +141,28 @@ impl Telegram {
     }
 
     fn topic_key(&self, alert: &Alert) -> Option<String> {
-        match self.topics {
-            TopicMode::None => None,
-            TopicMode::PerAgent => Some(format!(
+        match (self.topics, &alert.session) {
+            (TopicMode::None, _) => None,
+            // A herdr-core session keeps its topic while its space or title
+            // changes; the topic is renamed instead.
+            (TopicMode::PerAgent, Some(session)) => Some(format!("{}|{}", alert.host, session.key)),
+            (TopicMode::PerAgent, None) => Some(format!(
                 "{}|{}|{}|{}",
                 alert.host,
                 alert.workspace_name(),
                 alert.agent,
                 alert.pane_id
             )),
-            TopicMode::PerWorkspace => Some(format!("{}|{}", alert.host, alert.workspace_name())),
+            (TopicMode::PerWorkspace, _) => {
+                Some(format!("{}|{}", alert.host, alert.workspace_name()))
+            }
         }
     }
 
     fn topic_name(&self, alert: &Alert) -> String {
-        let name = match self.topics {
-            TopicMode::PerWorkspace => format!("{} · {}", alert.workspace_name(), alert.host),
+        let name = match (self.topics, &alert.session) {
+            (TopicMode::PerWorkspace, _) => format!("{} · {}", alert.workspace_name(), alert.host),
+            (_, Some(session)) => session.name.clone(),
             _ => format!(
                 "{} · {} · {} · {}",
                 alert.agent,
@@ -182,14 +188,43 @@ impl Telegram {
 
     /// The thread to post into, reopened first when the plugin closed it.
     fn thread_for(&self, key: &str, alert: &Alert) -> Result<i64, String> {
+        let name = self.topic_name(alert);
+        let created = std::cell::Cell::new(false);
         let handle = self.state.topic_thread(key, &alert.pane_id, || {
-            self.create_topic(&self.topic_name(alert))
+            created.set(true);
+            self.create_topic(&name)
         })?;
+        if self.topics == TopicMode::PerAgent && alert.session.is_some() {
+            if created.get() {
+                self.state.set_topic_name(key, &name)?;
+            } else if self.state.topic_name(key).as_deref() != Some(name.as_str()) {
+                // A failed rename is not worth losing the alert over.
+                match self.rename_topic(handle.thread_id, &name) {
+                    Ok(()) => self.state.set_topic_name(key, &name)?,
+                    Err(err) => eprintln!("goat-herdr: {err}"),
+                }
+            }
+        }
         if handle.closed {
             self.topic_call("reopenForumTopic", handle.thread_id)?;
             self.state.topic_set_closed(key, false)?;
         }
         Ok(handle.thread_id)
+    }
+
+    fn rename_topic(&self, thread_id: i64, name: &str) -> Result<(), String> {
+        match self.call(
+            "editForumTopic",
+            &serde_json::json!({
+                "chat_id": self.chat_id,
+                "message_thread_id": thread_id,
+                "name": name,
+            }),
+        ) {
+            Ok(_) => Ok(()),
+            Err(err) if err.description.contains("TOPIC_NOT_MODIFIED") => Ok(()),
+            Err(err) => Err(err.to_string()),
+        }
     }
 
     /// closeForumTopic or reopenForumTopic. Already in that state is success.
@@ -523,6 +558,7 @@ mod tests {
             pane_id: "w1:p1".into(),
             status: Status::Blocked,
             tail: tail.map(str::to_string),
+            session: None,
         }
     }
 
@@ -738,6 +774,77 @@ mod tests {
         assert!(free_text_option("Type something."));
         assert!(free_text_option("Other"));
         assert!(!free_text_option("Yes"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    fn hc_alert(title: &str, workspace: &str) -> Alert {
+        Alert {
+            host: "agents".into(),
+            workspace: workspace.into(),
+            agent: "claude-code".into(),
+            pane_id: "t8".into(),
+            status: Status::Done,
+            tail: None,
+            session: Some(crate::alert::Session {
+                key: "t8@100".into(),
+                name: format!("{workspace} · {title}"),
+            }),
+        }
+    }
+
+    #[test]
+    fn hc_topic_is_named_for_the_session_and_renamed_with_it() {
+        let server = Server::respond_seq(vec![
+            (200, r#"{"ok":true,"result":{"message_thread_id":40}}"#),
+            (200, OK),
+            (200, OK), // same name: no rename
+            (200, OK), // editForumTopic
+            (200, OK),
+        ]);
+        let (state, dir) = temp_state("hcname");
+        let tg = sink(&server, TopicMode::PerAgent, state);
+        tg.send(&hc_alert("Claude Code", "src")).unwrap();
+        tg.send(&hc_alert("Claude Code", "src")).unwrap();
+        // The space label and title arrive later; same topic, new name.
+        tg.send(&hc_alert("Fix the login bug", "tavern")).unwrap();
+        let reqs = server.requests();
+        let paths: Vec<&str> = reqs
+            .iter()
+            .map(|r| r.path.rsplit('/').next().unwrap())
+            .collect();
+        assert_eq!(
+            paths,
+            [
+                "createForumTopic",
+                "sendMessage",
+                "sendMessage",
+                "editForumTopic",
+                "sendMessage"
+            ]
+        );
+        assert_eq!(json(&reqs[0])["name"], "src · Claude Code");
+        assert_eq!(json(&reqs[3])["name"], "tavern · Fix the login bug");
+        assert_eq!(json(&reqs[3])["message_thread_id"], 40);
+        assert_eq!(json(&reqs[4])["message_thread_id"], 40);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn failed_rename_still_delivers() {
+        let server = Server::respond_seq(vec![
+            (200, r#"{"ok":true,"result":{"message_thread_id":40}}"#),
+            (200, OK),
+            (
+                400,
+                r#"{"ok":false,"description":"Bad Request: not enough rights"}"#,
+            ),
+            (200, OK),
+        ]);
+        let (state, dir) = temp_state("hcrename");
+        let tg = sink(&server, TopicMode::PerAgent, state);
+        tg.send(&hc_alert("a", "ws")).unwrap();
+        assert_eq!(tg.send(&hc_alert("b", "ws")).unwrap(), Delivery::Sent);
+        assert_eq!(server.requests().len(), 4);
         std::fs::remove_dir_all(dir).unwrap();
     }
 

@@ -95,7 +95,7 @@ Create a bot with @BotFather and put its token in `.env`. Send the bot a message
 
 `topics` needs a supergroup with Topics turned on and the bot as an admin with Manage Topics.
 
-- `per-agent`: one topic per agent pane, named `claude · goat-herdr · mac-mini · w3:p16`. A reply in the topic reaches that pane and no other. The topic is created on the first alert, closed when the pane closes, and reopened if the pane alerts again.
+- `per-agent`: one topic per agent pane, named `claude · goat-herdr · mac-mini · w3:p16`. A reply in the topic reaches that pane and no other. The topic is created on the first alert, closed when the pane closes, and reopened if the pane alerts again. Under herdr-core (`watch`) the topic is named for the session instead, `tavern · Fix the login bug`: the Herdr space, the `--name` if one was given, and the title the agent sets (Claude Code's is a summary of the conversation). The topic is renamed when that changes, and a new session that reuses an id gets a new topic.
 - `per-workspace`: one topic per host and workspace, shared by every agent in it.
 - `none`: everything in the chat root.
 

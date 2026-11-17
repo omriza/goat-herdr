@@ -210,6 +210,12 @@ pub struct Terminal {
     pub reported: bool,
     #[serde(default)]
     pub foreground: Option<Foreground>,
+    /// The terminal title the program sets; Claude Code puts a summary of
+    /// the conversation there.
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub created_ms: Option<u64>,
 }
 
 /// One OSC 7501 record: the program's own words.
@@ -250,6 +256,34 @@ impl Terminal {
             .unwrap_or_else(|| "agent".to_string())
     }
 
+    /// A name for people: the space, the launch name and the title, each
+    /// once; the address when they add nothing. Another machine's name goes
+    /// last.
+    pub fn session_name(&self) -> String {
+        fn add(parts: &mut Vec<String>, part: &str) {
+            let part = part.trim();
+            if !part.is_empty() && !parts.iter().any(|p| p == part) {
+                parts.push(part.to_string());
+            }
+        }
+        let mut parts = Vec::new();
+        add(&mut parts, &self.workspace());
+        let before = parts.len();
+        for part in [&self.name, &self.title].into_iter().flatten() {
+            add(&mut parts, part);
+        }
+        if parts.len() == before {
+            add(
+                &mut parts,
+                self.address.rsplit('/').next().unwrap_or_default(),
+            );
+        }
+        if let Some(machine) = self.machine() {
+            add(&mut parts, machine);
+        }
+        parts.join(" · ")
+    }
+
     /// The Herdr app's space: the part of the `where` label before ` / `
     /// (`goat-herdr / main` -> `goat-herdr`). Without the label, the last
     /// folder of the launch directory.
@@ -288,6 +322,7 @@ pub enum Change {
     Created(Box<Terminal>),
     Status(Option<StatusRecord>),
     Labels(HashMap<String, String>),
+    Title(Option<String>),
     /// `finished` or `removed`.
     Gone,
     Other,
@@ -332,6 +367,7 @@ pub fn parse_line(line: &str) -> Result<Line, String> {
         "labels" => Change::Labels(
             serde_json::from_value(data["labels"].clone()).map_err(|e| bad("labels", e))?,
         ),
+        "title" => Change::Title(data["title"].as_str().map(str::to_string)),
         "finished" | "removed" => Change::Gone,
         _ => Change::Other,
     };
@@ -430,6 +466,12 @@ impl Tracker {
             Change::Labels(labels) => {
                 if let Some(t) = self.terminals.get_mut(&address) {
                     t.labels = labels;
+                }
+                None
+            }
+            Change::Title(title) => {
+                if let Some(t) = self.terminals.get_mut(&address) {
+                    t.title = title;
                 }
                 None
             }
@@ -617,10 +659,47 @@ mod tests {
             Line::Other
         ));
         assert!(matches!(
-            parse_line(r#"{"jsonrpc":"2.0","method":"event","params":{"data":{"title":"x"},"seq":172,"terminal":"t9","type":"title"}}"#).unwrap(),
+            parse_line(r#"{"jsonrpc":"2.0","method":"event","params":{"data":{},"seq":172,"terminal":"t9","type":"turn"}}"#).unwrap(),
             Line::Event { change: Change::Other, .. }
         ));
         assert!(parse_line("not json").is_err());
+    }
+
+    #[test]
+    fn title_events_update_the_table() {
+        let mut tracker = Tracker::default();
+        let snapshot =
+            r#"{"seq":1,"terminals":[{"address":"t9","state":"live","title":"Claude Code"}]}"#;
+        tracker.apply(parse_line(snapshot).unwrap());
+        let line = r#"{"jsonrpc":"2.0","method":"event","params":{"data":{"title":"Fix the login bug"},"seq":2,"terminal":"t9","type":"title"}}"#;
+        assert!(tracker.apply(parse_line(line).unwrap()).is_empty());
+        assert_eq!(
+            tracker.terminals["t9"].title.as_deref(),
+            Some("Fix the login bug")
+        );
+    }
+
+    #[test]
+    fn session_name_reads_like_the_session() {
+        let mut t = Terminal {
+            address: "t8".into(),
+            cwd: "/home/a/src/goat-herdr".into(),
+            ..Terminal::default()
+        };
+        assert_eq!(t.session_name(), "goat-herdr · t8");
+        t.labels.insert("where".into(), "tavern / main".into());
+        t.title = Some("Herdr agent tavern simulation".into());
+        assert_eq!(t.session_name(), "tavern · Herdr agent tavern simulation");
+        t.name = Some("sim".into());
+        assert_eq!(
+            t.session_name(),
+            "tavern · sim · Herdr agent tavern simulation"
+        );
+        t.name = Some("tavern".into());
+        t.title = Some(" ".into());
+        assert_eq!(t.session_name(), "tavern · t8");
+        t.address = "mac/t3".into();
+        assert_eq!(t.session_name(), "tavern · t3 · mac");
     }
 
     #[test]

@@ -117,6 +117,7 @@ mod tests {
             pane_id: "w1:p1".into(),
             status: Status::Blocked,
             tail: Some("one\ntwo\n\nsay \"hi\"\n".into()),
+            session: None,
         }
     }
 
